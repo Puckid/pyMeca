@@ -249,14 +249,14 @@ class VectorTest(unittest.TestCase):
         v_2 = geometry.Vector([1, 2, 3])
         self.assertAlmostEqual(v_2.norm, 3.74165738677)
 
-    def test_dim(self):
+    def test_len(self):
         """
-        Test the dim function
+        Test the len function
         """
         v_1 = geometry.Vector([1, 2])
         v_2 = geometry.Vector([1, 2, 3])
-        self.assertEqual(v_1.dim, 2)
-        self.assertEqual(v_2.dim, 3)
+        self.assertEqual(len(v_1), 2)
+        self.assertEqual(len(v_2), 3)
 
     def test_cross_product(self):
         """
@@ -275,6 +275,35 @@ class VectorTest(unittest.TestCase):
         c_1 = geometry.Vector([1, 2, 3, 4])
         self.assertRaises(ValueError, c_1.cross_product, a_1)
         self.assertRaises(ValueError, a_1.cross_product, c_1)
+
+    def test_dot_product(self):
+        """
+        Test the dot product
+        """
+        v_1 = geometry.Vector([1, 3, -5])
+        v_2 = geometry.Vector([4, -2, -1])
+        self.assertEqual(v_1.dot_product(v_2), 3)
+        self.assertEqual(v_2.dot_product(v_1), 3)
+        v_3 = geometry.Vector([1, 2])
+        self.assertRaises(ValueError, v_3.dot_product, v_1)
+        a_1 = geometry.Vector([2, 0, 0])
+        a_2 = geometry.Vector([0, 1, 0])
+        self.assertEqual(a_1.dot_product(a_2), 0)
+
+    def test_triple_product(self):
+        """
+        Test the triple product
+        """
+        v_1 = geometry.Vector([1, 0, 0])
+        v_2 = geometry.Vector([0, 2, 0])
+        v_3 = geometry.Vector([0, 0, 3])
+        v_b = geometry.Vector([1, 2])
+        self.assertRaises(ValueError, v_1.triple_product, v_2, v_b)
+        self.assertRaises(ValueError, v_2.triple_product, v_b, v_1)
+        self.assertRaises(ValueError, v_b.triple_product, v_1, v_2)
+        self.assertEqual(v_1.triple_product(v_2, v_3), 6)
+        v_4 = geometry.Vector([3, 4, 0])
+        self.assertEqual(v_1.triple_product(v_2, v_4), 0)
 
 class PointTest(unittest.TestCase):
     """
@@ -326,6 +355,17 @@ class SegmentTest(unittest.TestCase):
         str_2 = "segmentExample:point1Ex[1.0, 2.0, 3.0]--point2Ex[2.0, 4.0, 6.0]"
         self.assertEqual(str_1, str_2)
 
+    def test_vector(self):
+        """
+        Test that we get the vector direction of the segment
+        """
+        p_1 = geometry.Point(geometry.Vector([1, 2, 3], 'vector1Example'), 'point1Ex')
+        p_2 = geometry.Point(geometry.Vector([2, 4, 7], 'vector2Example'), 'point2Ex')
+        s_1 = geometry.Segment(p_1, p_2, 'segmentExample')
+        v_1 = s_1.vector()
+        v_2 = geometry.Vector([1, 2, 4])
+        self.assertEqual(v_1.coordinates, v_2.coordinates)
+
     def test_midpoint(self):
         """
         Test the midpoint function
@@ -351,10 +391,10 @@ class ContourTest(unittest.TestCase):
         s_1 = geometry.Segment(p_1, p_2, 'segment1')
         s_2 = geometry.Segment(p_2, p_3, 'segment2')
         s_3 = geometry.Segment(p_3, p_1, 'segment3')
-        contour = geometry.Contour('contour1')
-        contour.add_segment(s_1)
-        contour.add_segment(s_2)
-        contour.add_segment(s_3)
+        contour = geometry.Contour(name='contour1')
+        contour.append(s_1)
+        contour.append(s_2)
+        contour.append(s_3)
         str_1 = str(contour)
         str_2 = ("contour1:\n"
                  "segment1:point1[1.0, 2.0, 3.0]--point2[3.0, 4.0, 5.0]\n"
@@ -362,17 +402,107 @@ class ContourTest(unittest.TestCase):
                  "segment3:point3[0.0, 0.0, 0.0]--point1[1.0, 2.0, 3.0]")
         self.assertEqual(str_1, str_2)
 
-    def test_add_segment(self):
+    def test_append(self):
         """
         Test to add segment to list
         """
         p_1 = geometry.Point(geometry.Vector([1, 2, 3]), 'point1')
         p_2 = geometry.Point(geometry.Vector([3, 4, 5]), 'point2')
         s_1 = geometry.Segment(p_1, p_2, 'segment1')
-        contour = geometry.Contour('contour1')
-        contour.add_segment(s_1)
+        contour = geometry.Contour(name='contour1')
+        contour.append(s_1)
         self.assertEqual(len(contour.segments), 1)
         self.assertEqual(contour.segments[0].uid, s_1.uid)
+
+    def test_delete(self):
+        """
+        Test to remove a segment from the list
+        """
+        seg = geometry.Segment()
+        contour = geometry.Contour()
+        for _ in range(5):
+            contour.append(geometry.Segment())
+        contour.append(seg)
+        self.assertEqual(len(contour.segments), 6)
+        contour.delete(seg)
+        self.assertEqual(len(contour.segments), 5)
+        uids = [e.uid for e in contour.segments]
+        self.assertFalse(seg.uid in uids)
+
+    def test_search_by_uid(self):
+        """
+        Test the search
+        """
+        seg = geometry.Segment()
+        contour = geometry.Contour()
+        for _ in range(5):
+            contour.append(geometry.Segment())
+        contour.append(seg)
+        result = contour.search_by_uid(seg.uid)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][0].uid, seg.uid)
+        result = contour.search_by_uid('not a uid')
+        self.assertFalse(result)
+
+    def test_search_by_name(self):
+        """
+        Test the search
+        """
+        seg = geometry.Segment(name='itsaschmilblick')
+        contour = geometry.Contour()
+        for i in range(5):
+            contour.append(geometry.Segment(name='segment' + str(i)))
+        contour.append(seg)
+        result = contour.search_by_name('isatschlimbickl')
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][0].uid, seg.uid)
+        result = contour.search_by_name('segment')
+        self.assertEqual(len(result), 5)
+
+    def test_is_closed(self):
+        """
+        Test that the check that the contour is closed is working
+        """
+        p_1 = geometry.Point(geometry.Vector([0, 1, 1]))
+        p_2 = geometry.Point(geometry.Vector([0, 1, 2]))
+        p_3 = geometry.Point(geometry.Vector([0, 2, 2]))
+        p_4 = geometry.Point(geometry.Vector([0, 2, 1]))
+        s_1 = geometry.Segment(p_1, p_2)
+        s_2 = geometry.Segment(p_2, p_3)
+        s_3 = geometry.Segment(p_3, p_4)
+        s_4 = geometry.Segment(p_4, p_1)
+        c_1 = geometry.Contour()
+        c_1.append(s_1)
+        c_1.append(s_2)
+        c_1.append(s_3)
+        self.assertFalse(c_1.is_closed())
+        c_1.append(s_4)
+        self.assertTrue(c_1.is_closed())
+
+    def test_is_coplanar(self):
+        """
+        Test that the check that the contour is flat on a plan is working
+        """
+        p_1 = geometry.Point(geometry.Vector([0, 1, 1]))
+        p_2 = geometry.Point(geometry.Vector([0, 1, 2]))
+        p_3 = geometry.Point(geometry.Vector([0, 2, 2]))
+        p_4 = geometry.Point(geometry.Vector([0, 2, 1]))
+        p_5 = geometry.Point(geometry.Vector([1, 3, 4]))
+        s_1 = geometry.Segment(p_1, p_2)
+        s_2 = geometry.Segment(p_2, p_3)
+        s_3 = geometry.Segment(p_3, p_4)
+        s_4 = geometry.Segment(p_4, p_5)
+        s_5 = geometry.Segment(p_5, p_1)
+        c_1 = geometry.Contour()
+        c_1.append(s_1)
+        c_1.append(s_2)
+        self.assertTrue(c_1.is_coplanar())
+        c_1.append(s_3)
+        self.assertTrue(c_1.is_coplanar())
+        c_1.append(s_4)
+        self.assertFalse(c_1.is_coplanar())
+        c_1.append(s_5)
+        self.assertFalse(c_1.is_coplanar())
 
 class ModuleTest(unittest.TestCase):
     """
@@ -391,10 +521,10 @@ class ModuleTest(unittest.TestCase):
         s_3 = geometry.Segment(p_3, p_4)
         s_4 = geometry.Segment(p_4, p_1)
         c_1 = geometry.Contour()
-        c_1.add_segment(s_1)
-        c_1.add_segment(s_2)
-        c_1.add_segment(s_3)
-        c_1.add_segment(s_4)
+        c_1.append(s_1)
+        c_1.append(s_2)
+        c_1.append(s_3)
+        c_1.append(s_4)
         c_2 = geometry.parallelogram(geometry.Point(geometry.Vector([0, 1, 1])),
                                      geometry.Vector([0, 0, 1]),
                                      geometry.Vector([0, 1, 0]))

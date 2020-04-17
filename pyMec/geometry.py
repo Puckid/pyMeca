@@ -118,9 +118,8 @@ class PyMecSession:
         scores = [fuzz.ratio(obj.name, name) for obj in self.__workspace]
         best = max(scores)
         if best < 70:
-            return []
-        return [(x, i) for i, x in enumerate(self.__workspace)
-                if scores[i] == best]
+            return None
+        return [(x, i) for i, x in enumerate(self.__workspace) if scores[i] == best]
 
     def search_by_uid(self, uid):
         """
@@ -186,14 +185,14 @@ class Vector(PyMecObject):
         if coord is None:
             coord = []
         super().__init__(name)
-        self.coordinates = [float(i) for i in coord]
+        self._coordinates = [float(i) for i in coord]
 
     def check_dim(self, vect):
         """
         check that given vector is the same dimension as instance
         raises ValueError
         """
-        if self.dim != vect.dim:
+        if len(self) != len(vect):
             raise ValueError("Vectors are not the same dimension")
 
     def __add__(self, vect):
@@ -216,6 +215,20 @@ class Vector(PyMecObject):
     def __eq__(self, vector):
         return self.coordinates == vector.coordinates
 
+    def __len__(self):
+        return len(self.coordinates)
+
+    @property
+    def coordinates(self):
+        """
+        returns the coordinates
+        """
+        return self._coordinates
+
+    @coordinates.setter
+    def coordinates(self, coord):
+        self._coordinates = coord
+
     @property
     def norm(self):
         """
@@ -223,24 +236,32 @@ class Vector(PyMecObject):
         """
         return math.sqrt(sum([x*x for x in self.coordinates]))
 
-    @property
-    def dim(self):
-        """
-        returns the dimension space of the vector
-        """
-        return len(self.coordinates)
-
     def cross_product(self, vect):
         """
         returns the cross product of vectors
         """
         self.check_dim(vect)
-        if self.dim != 3:
+        if len(self) != 3:
             raise ValueError("Cross product doesn't exist for vector not in"
                              "dimension 3")
         return Vector([self.coordinates[(i+1)%3]*vect.coordinates[(i+2)%3] -
                        self.coordinates[(i+2)%3]*vect.coordinates[(i+1)%3]
                        for i in range(3)])
+
+    def dot_product(self, vect):
+        """
+        returns the dot product of vectors
+        """
+        self.check_dim(vect)
+        return sum([a * b for a, b in zip(self.coordinates, vect.coordinates)])
+
+    def triple_product(self, vect_1, vect_2):
+        """
+        returns triple scalar product of 3 vectors
+        """
+        self.check_dim(vect_1)
+        self.check_dim(vect_2)
+        return self.dot_product(vect_1.cross_product(vect_2))
 
 class Point(PyMecObject):
     """
@@ -325,6 +346,12 @@ class Segment(PyMecObject):
     def __str__(self):
         return self.name + ':' + str(self.start) + '--' + str(self.end)
 
+    def vector(self):
+        """
+        returns the vector between start and end points
+        """
+        return self.end - self.start
+
     def midpoint(self):
         """
         returns the midpoint of the segment as a Point
@@ -335,15 +362,20 @@ class Contour(PyMecObject):
     """
     define the outline of a shape. Is basically a list of segment
     """
-    def __init__(self, name=''):
+    def __init__(self, segments=None, name=''):
         super().__init__(name)
-        self._segment_list = []
+        if segments is None:
+            segments = []
+        self._segment_list = segments
 
     def __str__(self):
         ret = self.name + ':'
         for seg in self._segment_list:
             ret += '\n' + str(seg)
         return ret
+
+    def __add__(self, contour):
+        return Contour(self.segments + contour.segments)
 
     @property
     def segments(self):
@@ -352,11 +384,65 @@ class Contour(PyMecObject):
         """
         return self._segment_list
 
-    def add_segment(self, segment):
+    def append(self, segment):
         """
         add a segment to the contour
         """
         self._segment_list.append(segment)
+
+    def delete(self, segment):
+        """
+        Remove the segment from the segment list
+        """
+        result = self.search_by_uid(segment.uid)
+        self.segments.pop(result[0][1])
+
+    def search_by_uid(self, uid):
+        """
+        Returns object with corresponding uid and correspond index in
+        __workspace. Returns None if uid is not found. Returns an array with
+        a single result to be consistant with other search function but can only
+        return one result.
+        """
+        for i, seg in enumerate(self.segments):
+            if seg.uid == uid:
+                return [(seg, i)]
+        return None
+
+    def search_by_name(self, name):
+        """
+        Uses fuzzy search to return the most probable object, returns multiple
+        objects if same results is found
+        """
+        scores = [fuzz.ratio(seg.name, name) for seg in self.segments]
+        best = max(scores)
+        if best < 70:
+            return None
+        return [(seg, i) for i, seg in enumerate(self.segments) if scores[i] == best]
+
+    def is_closed(self):
+        """
+        returns True if the contour is a closed path
+        TODO
+        """
+        n_segs = len(self.segments)
+        for i in range(n_segs):
+            if self.segments[i].end is not self.segments[(i +1) % n_segs].start:
+                return False
+        return True
+
+    def is_coplanar(self):
+        """
+        returns True if the contour is standing on a plan
+        """
+        segs = self.segments
+        if len(segs) < 3:
+            return True
+        for i in range(len(segs) - 2):
+            if segs[i].vector().triple_product(segs[i + 1].vector(),
+                                               segs[i + 2].vector()) != 0:
+                return False
+        return True
 
 def parallelogram(corner=None, vect_1=None, vect_2=None, name=''):
     """
@@ -371,13 +457,13 @@ def parallelogram(corner=None, vect_1=None, vect_2=None, name=''):
         vect_1 = Vector()
     if vect_2 is None:
         vect_2 = Vector()
-    ret = Contour(name)
+    ret = Contour(name=name)
     c_1 = corner
     c_2 = corner + vect_1
     c_3 = corner + vect_1 + vect_2
     c_4 = corner + vect_2
-    ret.add_segment(Segment(c_1, c_2))
-    ret.add_segment(Segment(c_2, c_3))
-    ret.add_segment(Segment(c_3, c_4))
-    ret.add_segment(Segment(c_4, c_1))
+    ret.append(Segment(c_1, c_2))
+    ret.append(Segment(c_2, c_3))
+    ret.append(Segment(c_3, c_4))
+    ret.append(Segment(c_4, c_1))
     return ret
